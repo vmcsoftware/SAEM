@@ -1,0 +1,49 @@
+# Dependências
+node_modules/
+package-lock.json
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Diretório de sessão do WhatsApp
+whatsapp-session/
+whatsapp-session*/
+*/session/
+**/session/
+whatsapp-sessionnpm*
+
+# Arquivos do sistema operacional
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Arquivos de build
+/dist
+/build
+/coverage
+
+# Outros
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime*
+.project
+.settings/
+*.tmp
+*.bak
+*.cache
