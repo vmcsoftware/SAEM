@@ -1,15 +1,16 @@
-const Event = require('../models/Event');
-const Musician = require('../models/Musician');
+const Event = require('../models/firebase/Event');
+const Musician = require('../models/firebase/Musician');
 
 /**
  * Obtém todos os eventos
  */
 const getAllEvents = async (req, res) => {
   try {
-    const events = await Event.find()
-      .populate('musicians.musician', 'name instrument')
-      .populate('createdBy', 'name')
-      .sort({ date: 1 });
+    // Buscar todos os eventos
+    const events = await Event.findAll();
+    
+    // Ordenar por data
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
     
     res.status(200).json({ events });
   } catch (error) {
@@ -25,9 +26,7 @@ const getEventById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const event = await Event.findById(id)
-      .populate('musicians.musician')
-      .populate('createdBy', 'name email');
+    const event = await Event.findById(id);
     
     if (!event) {
       return res.status(404).json({ message: 'Evento não encontrado' });
@@ -50,7 +49,7 @@ const createEvent = async (req, res) => {
     // Obter o ID do usuário atual a partir do token JWT
     const createdBy = req.user.userId;
     
-    const event = new Event({
+    const eventData = {
       title,
       date,
       startTime,
@@ -60,10 +59,12 @@ const createEvent = async (req, res) => {
       eventType: eventType || 'outro',
       repertoire: repertoire || [],
       musicians: musicians || [],
-      createdBy
-    });
+      createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
     
-    await event.save();
+    const event = await Event.create(eventData);
     
     res.status(201).json({
       message: 'Evento criado com sucesso',
@@ -83,23 +84,26 @@ const updateEvent = async (req, res) => {
     const { id } = req.params;
     const { title, date, startTime, endTime, location, description, eventType, repertoire } = req.body;
     
-    const event = await Event.findById(id);
+    // Verificar se o evento existe
+    const existingEvent = await Event.findById(id);
     
-    if (!event) {
+    if (!existingEvent) {
       return res.status(404).json({ message: 'Evento não encontrado' });
     }
     
-    // Atualizar campos
-    if (title) event.title = title;
-    if (date) event.date = date;
-    if (startTime) event.startTime = startTime;
-    if (endTime) event.endTime = endTime;
-    if (location) event.location = location;
-    if (description !== undefined) event.description = description;
-    if (eventType) event.eventType = eventType;
-    if (repertoire) event.repertoire = repertoire;
+    // Preparar dados para atualização
+    const updateData = {};
+    if (title) updateData.title = title;
+    if (date) updateData.date = date;
+    if (startTime) updateData.startTime = startTime;
+    if (endTime) updateData.endTime = endTime;
+    if (location) updateData.location = location;
+    if (description !== undefined) updateData.description = description;
+    if (eventType) updateData.eventType = eventType;
+    if (repertoire) updateData.repertoire = repertoire;
     
-    await event.save();
+    // Atualizar evento
+    const event = await Event.update(id, updateData);
     
     res.status(200).json({
       message: 'Evento atualizado com sucesso',
@@ -118,13 +122,15 @@ const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Verificar se o evento existe
     const event = await Event.findById(id);
     
     if (!event) {
       return res.status(404).json({ message: 'Evento não encontrado' });
     }
     
-    await Event.findByIdAndDelete(id);
+    // Remover evento
+    await Event.delete(id);
     
     res.status(200).json({ message: 'Evento removido com sucesso' });
   } catch (error) {
@@ -140,37 +146,16 @@ const addMusicianToEvent = async (req, res) => {
   try {
     const { eventId, musicianId } = req.params;
     
-    const event = await Event.findById(eventId);
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado' });
-    }
-    
-    const musician = await Musician.findById(musicianId);
-    if (!musician) {
-      return res.status(404).json({ message: 'Músico não encontrado' });
-    }
-    
-    // Verificar se o músico já está no evento
-    const musicianExists = event.musicians.some(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (musicianExists) {
-      return res.status(400).json({ message: 'Músico já está neste evento' });
-    }
-    
     // Adicionar músico ao evento
-    event.musicians.push({
-      musician: musicianId,
-      confirmed: false,
-      notificationSent: false
-    });
+    const updatedEvent = await Event.addMusician(eventId, musicianId);
     
-    await event.save();
+    if (!updatedEvent) {
+      return res.status(404).json({ message: 'Evento não encontrado ou músico já está no evento' });
+    }
     
     res.status(200).json({
       message: 'Músico adicionado ao evento com sucesso',
-      event
+      event: updatedEvent
     });
   } catch (error) {
     console.error('Erro ao adicionar músico ao evento:', error);
@@ -185,28 +170,12 @@ const removeMusicianFromEvent = async (req, res) => {
   try {
     const { eventId, musicianId } = req.params;
     
-    const event = await Event.findById(eventId);
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado' });
-    }
-    
-    // Verificar se o músico está no evento
-    const musicianIndex = event.musicians.findIndex(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (musicianIndex === -1) {
-      return res.status(400).json({ message: 'Músico não está neste evento' });
-    }
-    
-    // Remover músico do evento
-    event.musicians.splice(musicianIndex, 1);
-    
-    await event.save();
+    // Remover músico do evento usando o método da classe Event
+    const updatedEvent = await Event.removeMusician(eventId, musicianId);
     
     res.status(200).json({
       message: 'Músico removido do evento com sucesso',
-      event
+      event: updatedEvent
     });
   } catch (error) {
     console.error('Erro ao remover músico do evento:', error);
@@ -220,29 +189,18 @@ const removeMusicianFromEvent = async (req, res) => {
 const confirmMusician = async (req, res) => {
   try {
     const { eventId, musicianId } = req.params;
+    const { confirmed } = req.body;
     
-    const event = await Event.findById(eventId);
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado' });
+    // Confirmar presença do músico usando o método da classe Event
+    const updatedEvent = await Event.confirmMusicianPresence(eventId, musicianId, confirmed);
+    
+    if (!updatedEvent) {
+      return res.status(404).json({ message: 'Evento não encontrado ou músico não está no evento' });
     }
-    
-    // Encontrar o músico no evento
-    const musicianEntry = event.musicians.find(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (!musicianEntry) {
-      return res.status(400).json({ message: 'Músico não está neste evento' });
-    }
-    
-    // Confirmar presença
-    musicianEntry.confirmed = true;
-    
-    await event.save();
     
     res.status(200).json({
-      message: 'Presença do músico confirmada com sucesso',
-      event
+      message: `Presença ${confirmed ? 'confirmada' : 'recusada'} com sucesso`,
+      event: updatedEvent
     });
   } catch (error) {
     console.error('Erro ao confirmar presença do músico:', error);
@@ -257,22 +215,8 @@ const getEventsByDate = async (req, res) => {
   try {
     const { date } = req.params;
     
-    // Criar objeto de data a partir da string (formato: YYYY-MM-DD)
-    const searchDate = new Date(date);
-    searchDate.setHours(0, 0, 0, 0);
-    
-    const nextDay = new Date(searchDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    
-    const events = await Event.find({
-      date: {
-        $gte: searchDate,
-        $lt: nextDay
-      }
-    })
-    .populate('musicians.musician', 'name instrument')
-    .populate('createdBy', 'name')
-    .sort({ startTime: 1 });
+    // Buscar eventos pela data
+    const events = await Event.findByDate(date);
     
     res.status(200).json({ events });
   } catch (error) {

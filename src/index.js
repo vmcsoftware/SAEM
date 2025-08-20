@@ -1,10 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const path = require('path');
 const cron = require('node-cron');
 const whatsappService = require('./services/whatsappService');
+
+// Inicializar Firebase
+require('./config/firebaseConfig');
 
 // Importação das rotas
 const authRoutes = require('./routes/authRoutes');
@@ -27,17 +29,8 @@ app.use(express.urlencoded({ extended: true }));
 // Servir arquivos estáticos
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Conexão com o MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('Conectado ao MongoDB');
-})
-.catch((err) => {
-  console.error('Erro ao conectar ao MongoDB:', err);
-});
+// Firebase já está inicializado no arquivo de configuração
+console.log('Firebase inicializado');
 
 // Inicializar o serviço do WhatsApp
 whatsappService.initialize();

@@ -1,11 +1,13 @@
-const Musician = require('../models/Musician');
+const Musician = require('../models/firebase/Musician');
 
 /**
  * Obtém todos os músicos
  */
 const getAllMusicians = async (req, res) => {
   try {
-    const musicians = await Musician.find().sort({ name: 1 });
+    const musicians = await Musician.findAll();
+    // Ordenar por nome
+    musicians.sort((a, b) => a.name.localeCompare(b.name));
     res.status(200).json({ musicians });
   } catch (error) {
     console.error('Erro ao buscar músicos:', error);
@@ -19,6 +21,7 @@ const getAllMusicians = async (req, res) => {
 const getMusicianById = async (req, res) => {
   try {
     const { id } = req.params;
+    
     const musician = await Musician.findById(id);
     
     if (!musician) {
@@ -39,7 +42,7 @@ const createMusician = async (req, res) => {
   try {
     const { name, phone, instrument, isOrganist, availableDays, notes, user } = req.body;
     
-    const musician = new Musician({
+    const musicianData = {
       name,
       phone,
       instrument,
@@ -54,10 +57,12 @@ const createMusician = async (req, res) => {
         saturday: false
       },
       notes,
-      user
-    });
+      user,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
     
-    await musician.save();
+    const musician = await Musician.create(musicianData);
     
     res.status(201).json({
       message: 'Músico criado com sucesso',
@@ -77,23 +82,26 @@ const updateMusician = async (req, res) => {
     const { id } = req.params;
     const { name, phone, instrument, isOrganist, availableDays, active, notes, user } = req.body;
     
-    const musician = await Musician.findById(id);
+    // Verificar se o músico existe
+    const existingMusician = await Musician.findById(id);
     
-    if (!musician) {
+    if (!existingMusician) {
       return res.status(404).json({ message: 'Músico não encontrado' });
     }
     
-    // Atualizar campos
-    if (name) musician.name = name;
-    if (phone) musician.phone = phone;
-    if (instrument) musician.instrument = instrument;
-    if (isOrganist !== undefined) musician.isOrganist = isOrganist;
-    if (availableDays) musician.availableDays = availableDays;
-    if (active !== undefined) musician.active = active;
-    if (notes !== undefined) musician.notes = notes;
-    if (user) musician.user = user;
+    // Preparar dados para atualização
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (phone) updateData.phone = phone;
+    if (instrument) updateData.instrument = instrument;
+    if (isOrganist !== undefined) updateData.isOrganist = isOrganist;
+    if (availableDays) updateData.availableDays = availableDays;
+    if (active !== undefined) updateData.active = active;
+    if (notes !== undefined) updateData.notes = notes;
+    if (user) updateData.user = user;
     
-    await musician.save();
+    // Atualizar músico
+    const musician = await Musician.update(id, updateData);
     
     res.status(200).json({
       message: 'Músico atualizado com sucesso',
@@ -112,13 +120,15 @@ const deleteMusician = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Verificar se o músico existe
     const musician = await Musician.findById(id);
     
     if (!musician) {
       return res.status(404).json({ message: 'Músico não encontrado' });
     }
     
-    await Musician.findByIdAndDelete(id);
+    // Remover músico
+    await Musician.delete(id);
     
     res.status(200).json({ message: 'Músico removido com sucesso' });
   } catch (error) {
@@ -128,23 +138,17 @@ const deleteMusician = async (req, res) => {
 };
 
 /**
- * Obtém músicos disponíveis em um determinado dia da semana
+ * Obtém músicos disponíveis em um dia específico
  */
 const getAvailableMusicians = async (req, res) => {
   try {
-    const { day } = req.params;
-    
-    // Validar o dia da semana
-    const validDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    if (!validDays.includes(day)) {
-      return res.status(400).json({ message: 'Dia da semana inválido' });
-    }
+    const { day } = req.params; // 0 = domingo, 1 = segunda, ..., 6 = sábado
     
     // Buscar músicos disponíveis no dia especificado
-    const musicians = await Musician.find({
-      [`availableDays.${day}`]: true,
-      active: true
-    }).sort({ name: 1 });
+    const musicians = await Musician.findAvailableByDay(parseInt(day));
+    
+    // Ordenar por nome
+    musicians.sort((a, b) => a.name.localeCompare(b.name));
     
     res.status(200).json({ musicians });
   } catch (error) {

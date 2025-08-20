@@ -1,15 +1,16 @@
-const Rehearsal = require('../models/Rehearsal');
-const Musician = require('../models/Musician');
+const Rehearsal = require('../models/firebase/Rehearsal');
+const Musician = require('../models/firebase/Musician');
 
 /**
  * Obtém todos os ensaios
  */
 const getAllRehearsals = async (req, res) => {
   try {
-    const rehearsals = await Rehearsal.find()
-      .populate('musicians.musician', 'name instrument')
-      .populate('createdBy', 'name')
-      .sort({ date: 1 });
+    // Buscar todos os ensaios
+    const rehearsals = await Rehearsal.findAll();
+    
+    // Ordenar por data
+    rehearsals.sort((a, b) => new Date(a.date) - new Date(b.date));
     
     res.status(200).json({ rehearsals });
   } catch (error) {
@@ -25,9 +26,7 @@ const getRehearsalById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const rehearsal = await Rehearsal.findById(id)
-      .populate('musicians.musician')
-      .populate('createdBy', 'name email');
+    const rehearsal = await Rehearsal.findById(id);
     
     if (!rehearsal) {
       return res.status(404).json({ message: 'Ensaio não encontrado' });
@@ -50,7 +49,7 @@ const createRehearsal = async (req, res) => {
     // Obter o ID do usuário atual a partir do token JWT
     const createdBy = req.user.userId;
     
-    const rehearsal = new Rehearsal({
+    const rehearsalData = {
       title,
       date,
       startTime,
@@ -59,10 +58,12 @@ const createRehearsal = async (req, res) => {
       description,
       repertoire: repertoire || [],
       musicians: musicians || [],
-      createdBy
-    });
+      createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
     
-    await rehearsal.save();
+    const rehearsal = await Rehearsal.create(rehearsalData);
     
     res.status(201).json({
       message: 'Ensaio criado com sucesso',
@@ -82,22 +83,25 @@ const updateRehearsal = async (req, res) => {
     const { id } = req.params;
     const { title, date, startTime, endTime, location, description, repertoire } = req.body;
     
-    const rehearsal = await Rehearsal.findById(id);
+    // Verificar se o ensaio existe
+    const existingRehearsal = await Rehearsal.findById(id);
     
-    if (!rehearsal) {
+    if (!existingRehearsal) {
       return res.status(404).json({ message: 'Ensaio não encontrado' });
     }
     
-    // Atualizar campos
-    if (title) rehearsal.title = title;
-    if (date) rehearsal.date = date;
-    if (startTime) rehearsal.startTime = startTime;
-    if (endTime) rehearsal.endTime = endTime;
-    if (location) rehearsal.location = location;
-    if (description !== undefined) rehearsal.description = description;
-    if (repertoire) rehearsal.repertoire = repertoire;
+    // Preparar dados para atualização
+    const updateData = {};
+    if (title) updateData.title = title;
+    if (date) updateData.date = date;
+    if (startTime) updateData.startTime = startTime;
+    if (endTime) updateData.endTime = endTime;
+    if (location) updateData.location = location;
+    if (description !== undefined) updateData.description = description;
+    if (repertoire) updateData.repertoire = repertoire;
     
-    await rehearsal.save();
+    // Atualizar ensaio
+    const rehearsal = await Rehearsal.update(id, updateData);
     
     res.status(200).json({
       message: 'Ensaio atualizado com sucesso',
@@ -116,13 +120,15 @@ const deleteRehearsal = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Verificar se o ensaio existe
     const rehearsal = await Rehearsal.findById(id);
     
     if (!rehearsal) {
       return res.status(404).json({ message: 'Ensaio não encontrado' });
     }
     
-    await Rehearsal.findByIdAndDelete(id);
+    // Remover ensaio
+    await Rehearsal.delete(id);
     
     res.status(200).json({ message: 'Ensaio removido com sucesso' });
   } catch (error) {
@@ -138,37 +144,24 @@ const addMusicianToRehearsal = async (req, res) => {
   try {
     const { rehearsalId, musicianId } = req.params;
     
+    // Verificar se o ensaio existe
     const rehearsal = await Rehearsal.findById(rehearsalId);
     if (!rehearsal) {
       return res.status(404).json({ message: 'Ensaio não encontrado' });
     }
     
+    // Verificar se o músico existe
     const musician = await Musician.findById(musicianId);
     if (!musician) {
       return res.status(404).json({ message: 'Músico não encontrado' });
     }
     
-    // Verificar se o músico já está no ensaio
-    const musicianExists = rehearsal.musicians.some(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (musicianExists) {
-      return res.status(400).json({ message: 'Músico já está neste ensaio' });
-    }
-    
-    // Adicionar músico ao ensaio
-    rehearsal.musicians.push({
-      musician: musicianId,
-      confirmed: false,
-      notificationSent: false
-    });
-    
-    await rehearsal.save();
+    // Adicionar músico ao ensaio usando o método da classe Rehearsal
+    const updatedRehearsal = await Rehearsal.addMusician(rehearsalId, musicianId);
     
     res.status(200).json({
       message: 'Músico adicionado ao ensaio com sucesso',
-      rehearsal
+      rehearsal: updatedRehearsal
     });
   } catch (error) {
     console.error('Erro ao adicionar músico ao ensaio:', error);
@@ -183,28 +176,12 @@ const removeMusicianFromRehearsal = async (req, res) => {
   try {
     const { rehearsalId, musicianId } = req.params;
     
-    const rehearsal = await Rehearsal.findById(rehearsalId);
-    if (!rehearsal) {
-      return res.status(404).json({ message: 'Ensaio não encontrado' });
-    }
-    
-    // Verificar se o músico está no ensaio
-    const musicianIndex = rehearsal.musicians.findIndex(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (musicianIndex === -1) {
-      return res.status(400).json({ message: 'Músico não está neste ensaio' });
-    }
-    
-    // Remover músico do ensaio
-    rehearsal.musicians.splice(musicianIndex, 1);
-    
-    await rehearsal.save();
+    // Remover músico do ensaio usando o método da classe Rehearsal
+    const updatedRehearsal = await Rehearsal.removeMusician(rehearsalId, musicianId);
     
     res.status(200).json({
       message: 'Músico removido do ensaio com sucesso',
-      rehearsal
+      rehearsal: updatedRehearsal
     });
   } catch (error) {
     console.error('Erro ao remover músico do ensaio:', error);
@@ -218,29 +195,14 @@ const removeMusicianFromRehearsal = async (req, res) => {
 const confirmMusician = async (req, res) => {
   try {
     const { rehearsalId, musicianId } = req.params;
+    const { confirmed } = req.body;
     
-    const rehearsal = await Rehearsal.findById(rehearsalId);
-    if (!rehearsal) {
-      return res.status(404).json({ message: 'Ensaio não encontrado' });
-    }
-    
-    // Encontrar o músico no ensaio
-    const musicianEntry = rehearsal.musicians.find(
-      m => m.musician.toString() === musicianId
-    );
-    
-    if (!musicianEntry) {
-      return res.status(400).json({ message: 'Músico não está neste ensaio' });
-    }
-    
-    // Confirmar presença
-    musicianEntry.confirmed = true;
-    
-    await rehearsal.save();
+    // Confirmar presença do músico usando o método da classe Rehearsal
+    const updatedRehearsal = await Rehearsal.confirmMusicianPresence(rehearsalId, musicianId, confirmed);
     
     res.status(200).json({
-      message: 'Presença do músico confirmada com sucesso',
-      rehearsal
+      message: `Presença ${confirmed ? 'confirmada' : 'recusada'} com sucesso`,
+      rehearsal: updatedRehearsal
     });
   } catch (error) {
     console.error('Erro ao confirmar presença do músico:', error);
@@ -262,15 +224,11 @@ const getRehearsalsByDate = async (req, res) => {
     const nextDay = new Date(searchDate);
     nextDay.setDate(nextDay.getDate() + 1);
     
-    const rehearsals = await Rehearsal.find({
-      date: {
-        $gte: searchDate,
-        $lt: nextDay
-      }
-    })
-    .populate('musicians.musician', 'name instrument')
-    .populate('createdBy', 'name')
-    .sort({ startTime: 1 });
+    // Buscar ensaios pela data usando o método do Firebase
+    const rehearsals = await Rehearsal.findByDate(searchDate, nextDay);
+    
+    // Ordenar por horário de início
+    rehearsals.sort((a, b) => a.startTime.localeCompare(b.startTime));
     
     res.status(200).json({ rehearsals });
   } catch (error) {

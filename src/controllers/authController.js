@@ -1,4 +1,4 @@
-const User = require('../models/User');
+const User = require('../models/firebase/User');
 const jwt = require('jsonwebtoken');
 
 /**
@@ -7,35 +7,38 @@ const jwt = require('jsonwebtoken');
 const register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-
+    
     // Verificar se o usuário já existe
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findByEmail(email);
+    
     if (existingUser) {
-      return res.status(400).json({ message: 'Usuário já existe com este e-mail' });
+      return res.status(400).json({ message: 'Email já está em uso' });
     }
-
+    
     // Criar novo usuário
-    const user = new User({
+    const userData = {
       name,
       email,
       password,
-      role: role || 'user'
-    });
-
-    await user.save();
-
+      role: role || 'user',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const user = await User.create(userData);
+    
     // Gerar token JWT
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      { userId: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
-
+    
     res.status(201).json({
       message: 'Usuário registrado com sucesso',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -53,31 +56,26 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Verificar se o usuário existe
-    const user = await User.findOne({ email });
+    
+    // Autenticar usuário
+    const user = await User.authenticate(email, password);
+    
     if (!user) {
-      return res.status(401).json({ message: 'Credenciais inválidas' });
+      return res.status(401).json({ message: 'Email ou senha inválidos' });
     }
-
-    // Verificar senha
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Credenciais inválidas' });
-    }
-
+    
     // Gerar token JWT
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      { userId: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
-
+    
     res.status(200).json({
       message: 'Login realizado com sucesso',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -90,20 +88,21 @@ const login = async (req, res) => {
 };
 
 /**
- * Obtém o perfil do usuário atual
+ * Obtém o perfil do usuário autenticado
  */
 const getProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId);
+    
     if (!user) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
     }
-
+    
     res.status(200).json({
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -111,8 +110,8 @@ const getProfile = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erro ao obter perfil do usuário:', error);
-    res.status(500).json({ message: 'Erro ao obter perfil do usuário', error: error.message });
+    console.error('Erro ao obter perfil:', error);
+    res.status(500).json({ message: 'Erro ao obter perfil', error: error.message });
   }
 };
 
@@ -123,23 +122,29 @@ const updatePassword = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { currentPassword, newPassword } = req.body;
-
-    // Verificar se o usuário existe
+    
+    // Verificar se o usuário existe e se a senha atual está correta
     const user = await User.findById(userId);
+    
     if (!user) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
     }
-
-    // Verificar senha atual
-    const isPasswordValid = await user.comparePassword(currentPassword);
-    if (!isPasswordValid) {
+    
+    // Autenticar usuário com a senha atual
+    const authenticatedUser = await User.authenticate(user.email, currentPassword);
+    
+    if (!authenticatedUser) {
       return res.status(401).json({ message: 'Senha atual incorreta' });
     }
-
+    
     // Atualizar senha
-    user.password = newPassword;
-    await user.save();
-
+    const updateData = {
+      password: newPassword,
+      updatedAt: new Date()
+    };
+    
+    await User.update(userId, updateData);
+    
     res.status(200).json({ message: 'Senha atualizada com sucesso' });
   } catch (error) {
     console.error('Erro ao atualizar senha:', error);
