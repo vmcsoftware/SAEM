@@ -1213,7 +1213,8 @@ function getMonthName(month) {
   return months[month];
 }
 
-function addRepertoireItem(containerId, value = '') {
+// Tornando a função global para ser acessível de outros arquivos
+window.addRepertoireItem = function(containerId, value = '') {
   const container = document.getElementById(containerId);
   const itemDiv = document.createElement('div');
   itemDiv.className = 'repertoire-item';
@@ -1228,7 +1229,8 @@ function addRepertoireItem(containerId, value = '') {
   container.appendChild(itemDiv);
 }
 
-function removeRepertoireItem(button) {
+// Tornando a função global para ser acessível de outros arquivos
+window.removeRepertoireItem = function(button) {
   const item = button.closest('.repertoire-item');
   item.remove();
 }
